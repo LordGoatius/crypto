@@ -100,7 +100,7 @@ static struct GroupAction permutation = {
 int main() {
     Enigma machine = {
         .crypt = crypt,
-        .message = strcpy(malloc(strlen(MESSAGE) + 1), MESSAGE),
+        .message = MESSAGE,
         .curr = 0,
         .fast = {
             .rotor = FAST,
