@@ -5,5 +5,4 @@ RUN apk add gcc libc-dev python3 curl gcompat
 RUN curl https://raw.githubusercontent.com/cd-c89/crypto/main/enigma/tester.py -o tester.py
 
 COPY enigma.c .
-RUN gcc enigma.c -o enigma
-RUN ./enigma
+RUN python3 tester.py

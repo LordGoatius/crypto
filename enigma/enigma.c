@@ -9,7 +9,7 @@
 // Some things to say: (In Disjoint Cycle Notation)
 // IDENTITY:     (A)(B)(C)(D)(E)(F)(G)(H)(I)(J)(K)(L)(M)(N)(O)(P)(Q)(R)(S)(T)(U)(V)(W)(X)(Y)(Z)
 // (Each letter gets mapped to itself with IDENTITY)
-#define IDENTITY "ABCDEFGHIJKLMNOPQRSTUVWXYZ" 
+#define IDENTITY "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 // FAST:         (ABDHPEJT)(CFLVMZOYQIRWUKXSG)(N)
 #define FAST     "BDFHJLCPRTXVZNYEIWGAKMUSQO"
 // MEDIUM:       (A)(BJ)(CDKLHUP)(ESZ)(FIXVYOMW)(GR)(NT)(Q)
@@ -45,6 +45,7 @@ typedef struct Rotor {
     size_t shift;
     struct GroupAction* actions;
     void (*rotate)(struct Rotor* self);
+    char (*obfuscate)(struct Rotor* self, char, size_t invert);
 } Rotor;
 
 // Rotate
@@ -56,9 +57,23 @@ void rotate(Rotor* self) {
 struct GroupAction {
     // This is C, so our api verification process is code comments above a function pointer
     void* (*multiply)(void* self, void* elem);
-    void* (*inverse)(void* self);
+    void* (*inverse)(void* self, void* elem);
     void* identity;
 };
+
+// Apply rotor to letter
+char obfuscate(Rotor* self, char letter, size_t invert) {
+    void* (*actions[2])(void*, void*) = {self->actions->multiply, self->actions->inverse};
+    void* (*action)(void*, void*) = actions[invert];
+    // apply shift
+    letter = IDENTITY[(letter - 'A' + self->shift) % 26];
+
+    letter = *(char*)action(self, &letter);
+
+    // unapply shift
+    letter = IDENTITY[((letter - 'A' + 26) - self->shift) % 26];
+    return letter;
+}
 
 // groupelem is a char for a rotor, the group is the `self`
 void* permute(void* self, void* elem) {
@@ -66,17 +81,31 @@ void* permute(void* self, void* elem) {
     char* key = ((Rotor*)self)->rotor;
     // Elem is a ptr to a struct with a pointer to a group element
     char value = *(char*)elem;
-    // value is 'a' -> 'z'. Convert to index by subtract 'a';
+    // value is 'A' -> 'Z'. Convert to index by subtract 'A';
     size_t index = value - 'A';
     return &key[index];
 }
 
-// NOTE: Theoretically you can calculate an inverse and I wanted more than one
-// function for my poor vtable, it was hungy.
-// It only gets a function stub though.
-void* inverse(void* self);
+
+// funcion that does the opposite of permute in the same action
+void* invert(void* self, void* elem) {
+    // Self is a rotor
+    char* key = ((Rotor*)self)->invrs;
+    // Elem is a ptr to a struct with a pointer to a group element
+    char value = *(char*)elem;
+    // value is 'A' -> 'Z'. Convert to index by subtract 'A';
+    size_t index = value - 'A';
+    return &key[index];
+}
 
 // We making a state machine with this one
+// An engima machine is a set $\Epislon = \{ \delta_1, m, i, \Rho, \rho \}$
+// Where 
+// - $\delta_1$ is the encrypt/decrypt function
+// - m contains the message to be encrypted or decrypted
+// - i containts the machine location state in the message
+// - $\Rho$ contains the rotors, which are are permutation functions and
+// - $\rho$ is the reflect
 typedef struct Enigma {
     void (*crypt)(struct Enigma* self);
     char* message;
@@ -84,51 +113,105 @@ typedef struct Enigma {
     Rotor fast;
     Rotor medm;
     Rotor slow;
+    Rotor refl;
 } Enigma;
 
-void crypt(struct Enigma* self) {
-    // TODO
+void crypt(Enigma* self) {
+    // reset curr for reproducibility
+    self->curr = 0;
+    size_t len = strlen(self->message);
+
+    Rotor* fast = &self->fast;
+    Rotor* medm = &self->medm;
+    Rotor* slow = &self->slow;
+    Rotor* refl = &self->refl;
+
+    // reset shift for same
+    fast->shift = 0;
+    medm->shift = 0;
+    slow->shift = 0;
+
+    while (self->curr < len) {
+        // TODO: Actually write the logic
+        // It's not even that hard I just need to do it
+        fast->rotate(fast);
+        if (fast->shift == 0) 
+            medm->rotate(medm);
+        if (medm->shift == 0 && fast->shift == 0)
+            slow->rotate(slow);
+
+        char letter = self->message[self->curr];
+        letter = fast->obfuscate(fast, letter, 0);
+        letter = medm->obfuscate(medm, letter, 0);
+        letter = slow->obfuscate(slow, letter, 0);
+        letter = refl->obfuscate(refl, letter, 0);
+        letter = slow->obfuscate(slow, letter, 1);
+        letter = medm->obfuscate(medm, letter, 1);
+        letter = fast->obfuscate(fast, letter, 1);
+
+        self->message[self->curr] = letter;
+
+        self->curr += 1;
+    }
 }
 
 // permute is implementation for rotor only
 static struct GroupAction permutation = {
     .multiply = permute,
+    .inverse  = invert,
     .identity = IDENTITY,
     // NOTE: Add inverse if function worked
 };
 
-int main() {
+int main(int argc, char **argv) {
+    if (argc < 2) { return 1; }
     Enigma machine = {
         .crypt = crypt,
-        .message = MESSAGE,
+        .message = argv[1],
         .curr = 0,
         .fast = {
             .rotor = FAST,
             .invrs = INV_FAST,
             .shift = 0,
+            .rotate = rotate,
+            .obfuscate = obfuscate,
             .actions = &permutation
         },
         .medm = {
             .rotor = MEDIUM,
             .invrs = INV_MED,
             .shift = 0,
+            .rotate = rotate,
+            .obfuscate = obfuscate,
             .actions = &permutation
         },
         .slow = {
             .rotor = SLOW,
             .invrs = INV_SLOW,
             .shift = 0,
+            .rotate = rotate,
+            .obfuscate = obfuscate,
             .actions = &permutation
         },
+        .refl = {
+            .rotor = REFLECT,
+            .invrs = REFLECT,
+            .shift = 0,
+            .rotate = NULL,
+            .obfuscate = obfuscate,
+            .actions = &permutation
+        }
     };
 
     printf("%s\n", machine.message);
 
     machine.crypt(&machine);
+    puts("\n");
 
     printf("%s\n", machine.message);
 
     machine.crypt(&machine);
+    puts("\n");
 
     printf("%s\n", machine.message);
 
