@@ -117,19 +117,12 @@ typedef struct Enigma {
 } Enigma;
 
 void crypt(Enigma* self) {
-    // reset curr for reproducibility
-    self->curr = 0;
     size_t len = strlen(self->message);
 
     Rotor* fast = &self->fast;
     Rotor* medm = &self->medm;
     Rotor* slow = &self->slow;
     Rotor* refl = &self->refl;
-
-    // reset shift for same
-    fast->shift = 0;
-    medm->shift = 0;
-    slow->shift = 0;
 
     while (self->curr < len) {
         // TODO: Actually write the logic
@@ -153,6 +146,14 @@ void crypt(Enigma* self) {
 
         self->curr += 1;
     }
+
+    // reset curr for reproducibility
+    self->curr = 0;
+
+    // reset shift for same
+    fast->shift = 0;
+    medm->shift = 0;
+    slow->shift = 0;
 }
 
 // permute is implementation for rotor only
