@@ -1,0 +1,9 @@
+FROM ubuntu 
+
+RUN apt update && apt install gcc curl -y
+
+RUN curl https://raw.githubusercontent.com/cd-c89/crypto/refs/heads/main/macros/tester.c -o tester.c
+
+RUN curl https://raw.githubusercontent.com/cd-c89/crypto/refs/heads/main/macros/tester.sh -o tester.sh
+
+COPY macros.c .
