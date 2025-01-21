@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define SHA_SIZE (512 / 8)
+
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -35,6 +37,7 @@ void resize(Array*);
 // always 512 size array behind pointer;
 void insert(Array*, u8*, usize);
 void btle(u32*);
+void btlel(u64*);
 
 u32 rotate(u32, u32);
 int main(int, char**);
@@ -83,7 +86,7 @@ void resize(Array *self) {
     // Not how I would do it if I wasn't rushing this out 4 weeks in advance
     // Fancy math with Array size would be better probably 
     // but this avoids the problem completely
-    usize size = self->cap + 512;
+    usize size = self->cap + SHA_SIZE;
     u8 *new = malloc(sizeof(u8) * size);
     memcpy(new, self->array, self->cap);
     free(self->array);
@@ -92,56 +95,54 @@ void resize(Array *self) {
 }
 
 void insert(Array* self, u8* data, usize size) {
-    if (self->size + 512 > self->cap) {
+    if (self->size + SHA_SIZE > self->cap) {
         resize(self);
     }
 
     // copy 512 bytes of data, even if it's not 512 long.
-    memcpy((self->array + self->size), data, 512);
+    memcpy((self->array + self->size), data, SHA_SIZE);
     // Add the size of the data to the size of the array (512, unless last chunk);
     self->size += size;
 }
 
 void fill_arr(FILE* input, Array *output) {
-    u8 temp[512] = { 0 };
+    u8 temp[SHA_SIZE] = { 0 };
     usize in_size;
     // I hope this stupid for loop works
-    for (in_size = fread(temp, 1, 512, input); in_size > 0; in_size = fread(temp, 1, 512, input)) {
+    for (in_size = fread(temp, 1, SHA_SIZE, input); in_size > 0; in_size = fread(temp, 1, SHA_SIZE, input)) {
         insert(output, temp, in_size);
     }
 }
 
-// Wikipedia:
+// NOTE(Wikipedia):
 // begin with the original message of length L bits
 // append a single '1' bit
 // append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K + 64) is a multiple of 512
 // append L as a 64-bit big-endian integer, making the total post-processed length a multiple of 512 bits
 // such that the bits in the message are: <original message of length L> 1 <K zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
 void padd_arr(Array *self) {
-    if (self->size + 65 > self->cap) {
-        // Do logic here to add stuff and then to change it
-    } else {
-        // FIXME
-        usize offset = (self->cap - self->size);
-        if (offset != 0) {
-            memset(self->array + self->size, 0, offset);
-            self->array[self->size] = 1;
-            // need to add 64-bit big endian at the end
-        }
+    memset(self->array + self->size, 0, self->cap - self->size);
+    // self->array[self->size] = 0b00000001;
+    self->array[self->size] = 0b10000000;
+    usize diff = ((self->cap - self->size) * 8);
+
+    if (diff < 65) {
+        resize(self);
     }
+
+    u64 l = *((u64*)(self->array));
+    btlel(&l);
+    *((u64*)(self->array + self->cap - sizeof(u64))) = l;
 }
 
 Digest sha256(Array *self) {
     // Pseudocode taken from the Wikipedia Article on SHA-2
     usize total;
-    for (total = 0; total < self->cap; total += 512) {
+    for (total = 0; total < self->cap; total += SHA_SIZE) {
         u32 w[64] = { 0 };
         u32 chunk[16];
         usize i;
-        // FIXME: Annoying warning
-        // I see what I did wrong oops
-        // Gotta change everything rip
-        memcpy(w, self->array + total, 512);
+        memcpy(chunk, self->array + total, SHA_SIZE);
         for (i = 0; i < 16; i++) {
             w[i] = chunk[i];
         }
@@ -162,7 +163,7 @@ Digest sha256(Array *self) {
         // f := h5
         // g := h6
         // h := h7
-        
+
         u32 a1 = h[0];
         u32 b1 = h[1];
         u32 c1 = h[2];
@@ -254,6 +255,25 @@ void btle(u32 *num) {
     arr[1] ^= arr[2];
 }
 
+void btlel(u64* num) {
+    u8 *arr = (u8*)num;
+    arr[0] ^= arr[7];
+    arr[7] ^= arr[0];
+    arr[0] ^= arr[7];
+
+    arr[1] ^= arr[6];
+    arr[6] ^= arr[1];
+    arr[1] ^= arr[6];
+
+    arr[2] ^= arr[5];
+    arr[5] ^= arr[2];
+    arr[2] ^= arr[5];
+
+    arr[3] ^= arr[4];
+    arr[4] ^= arr[3];
+    arr[3] ^= arr[4];
+}
+
 int main(int argc, char **argv) {
     FILE* input;
     if (argc != 2) {
@@ -264,8 +284,8 @@ int main(int argc, char **argv) {
 
     Array data = {
         .size = 0,
-        .cap = 512,
-        .array = malloc(512),
+        .cap = SHA_SIZE,
+        .array = malloc(SHA_SIZE),
     };
 
     fill_arr(input, &data);
@@ -278,6 +298,11 @@ int main(int argc, char **argv) {
     printf("Size: %lu\nCap: %lu\n", data.size, data.cap);
 
     Digest hash = sha256(&data);
+
+    for (usize i = 0; i < 8; i++) {
+        printf("%x", h[i]);
+    }
+    puts("\n");
 
     free(data.array);
 
