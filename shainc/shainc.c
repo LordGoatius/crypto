@@ -118,11 +118,16 @@ void fill_arr(FILE* input, Array *output) {
 // append L as a 64-bit big-endian integer, making the total post-processed length a multiple of 512 bits
 // such that the bits in the message are: <original message of length L> 1 <K zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
 void padd_arr(Array *self) {
-    // FIXME
-    usize offset = (self->cap - self->size);
-    if (offset != 0) {
-        memset(self->array + self->size, 0, offset);
-        self->array[self->size] = 1;
+    if (self->size + 65 > self->cap) {
+        // Do logic here to add stuff and then to change it
+    } else {
+        // FIXME
+        usize offset = (self->cap - self->size);
+        if (offset != 0) {
+            memset(self->array + self->size, 0, offset);
+            self->array[self->size] = 1;
+            // need to add 64-bit big endian at the end
+        }
     }
 }
 
@@ -134,6 +139,8 @@ Digest sha256(Array *self) {
         u32 chunk[16];
         usize i;
         // FIXME: Annoying warning
+        // I see what I did wrong oops
+        // Gotta change everything rip
         memcpy(w, self->array + total, 512);
         for (i = 0; i < 16; i++) {
             w[i] = chunk[i];
@@ -198,7 +205,6 @@ Digest sha256(Array *self) {
             b1 = a1;
             a1 = tmp0 + tmp1;
         }
- 
 
         h[0] = h[0] + a1;
         h[1] = h[1] + b1;
