@@ -54,14 +54,15 @@ void rotate(Rotor* self) {
 // Group actions perform on some element in a group
 struct GroupAction {
     // This is C, so our api verification process is code comments above a function pointer
-    void* (*multiply)(void* self, void* elem);
+    void* (*multiply)(void* self, void* rhs);
+    void* (*apply)(void* self, void* elem);
     void* (*inverse)(void* self, void* elem);
     void* identity;
 };
 
 // Apply rotor to letter
 char obfuscate(Rotor* self, char letter, size_t invert) {
-    void* (*actions[2])(void*, void*) = {self->actions->multiply, self->actions->inverse};
+    void* (*actions[2])(void*, void*) = {self->actions->apply, self->actions->inverse};
     void* (*action)(void*, void*) = actions[invert];
     // apply shift
     letter = IDENTITY[(letter - 'A' + self->shift) % 26];
@@ -156,7 +157,8 @@ void crypt(Enigma* self) {
 
 // permute is implementation for rotor only
 static struct GroupAction permutation = {
-    .multiply = permute,
+    .multiply = NULL,
+    .apply = permute,
     .inverse  = invert,
     .identity = IDENTITY,
     // NOTE: Add inverse if function worked

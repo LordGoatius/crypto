@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,19 +23,8 @@ typedef struct Array {
     u8*  array;
 } Array;
 
-typedef struct {
-    u32 h0;
-    u32 h1;
-    u32 h2;
-    u32 h3;
-    u32 h4;
-    u32 h5;
-    u32 h6;
-    u32 h7;
-} Digest;
-
 void resize(Array*);
-// always 512 size array behind pointer;
+/* always 512 size array behind pointer; */
 void insert(Array*, u8*, usize);
 void btle(u32*);
 void btlel(u64*);
@@ -43,7 +33,7 @@ u32 rotate(u32, u32);
 int main(int, char**);
 void fill_arr(FILE*, Array*);
 void padd_arr(Array*);
-Digest sha256(Array*);
+void sha256(Array*);
 
 u32 k[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
@@ -81,12 +71,8 @@ u32 rotate(u32 a, u32 b) {
 }
 
 void resize(Array *self) {
-    // ugh not amoratized ik but it's gotta be exact
-    // resizing is expensive but it can't be *that* bad
-    // Not how I would do it if I wasn't rushing this out 4 weeks in advance
-    // Fancy math with Array size would be better probably 
-    // but this avoids the problem completely
-    usize size = self->cap + SHA_SIZE;
+    /* I'm doing it in bytes now so I'm amoritzing it */
+    usize size = self->cap * 2;
     u8 *new = malloc(sizeof(u8) * size);
     memcpy(new, self->array, self->cap);
     free(self->array);
@@ -94,108 +80,141 @@ void resize(Array *self) {
     self->array = new;
 }
 
+/* Insert `size` bytes from `data` into the array */
 void insert(Array* self, u8* data, usize size) {
-    if (self->size + SHA_SIZE > self->cap) {
+    if (self->size + size > self->cap) {
         resize(self);
     }
 
-    // copy 512 bytes of data, even if it's not 512 long.
-    memcpy((self->array + self->size), data, SHA_SIZE);
-    // Add the size of the data to the size of the array (512, unless last chunk);
+    /* copy 512 bytes of data, even if it's not 512 long. */
+    memcpy((self->array + self->size), data, size);
+    /* Add the size of the data to the size of the array (512, unless last chunk); */
     self->size += size;
 }
 
 void fill_arr(FILE* input, Array *output) {
     u8 temp[SHA_SIZE] = { 0 };
     usize in_size;
-    // I hope this stupid for loop works
+    /* I hope this stupid for loop works */
     for (in_size = fread(temp, 1, SHA_SIZE, input); in_size > 0; in_size = fread(temp, 1, SHA_SIZE, input)) {
         insert(output, temp, in_size);
     }
 }
 
-// NOTE(Wikipedia):
-// begin with the original message of length L bits
-// append a single '1' bit
-// append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K + 64) is a multiple of 512
-// append L as a 64-bit big-endian integer, making the total post-processed length a multiple of 512 bits
-// such that the bits in the message are: <original message of length L> 1 <K zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
+/* NOTE(CryptoStackExchange[https://crypto.stackexchange.com/questions/79734/how-to-pad-a-448-bit-message-for-sha256]):
+ * The padding method for SHA-256 is (assuming you're byte oriented - it appears you are)
+ * is 'append an 0x80 byte, and then add 0x00 byte's until the length modulo 64 bytes is 56.
+ * This implies that if the original message length modulo 64 is 56 or larger,
+ * you'll need to do one more hash compression operation. (Apr 6, 2020)
+ * */
+/* NOTE(Wikipedia):
+ * begin with the original message of length L bits
+ * append a single '1' bit
+ * append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K + 64) is a multiple of 512
+ * append L as a 64-bit big-endian integer, making the total post-processed length a multiple of 512 bits
+ * such that the bits in the message are: <original message of length L> 1 <K zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
+ * */
 void padd_arr(Array *self) {
-    memset(self->array + self->size, 0, self->cap - self->size);
-    // self->array[self->size] = 0b00000001;
-    self->array[self->size] = 0b10000000;
-    usize diff = ((self->cap - self->size) * 8);
+    u8 one = 0x80;
+    u8 zero = 0x00;
+    usize i;
+    usize size;
+    usize *ptr_size;
+    size = self->size * 8;
+    ptr_size = &size;
 
-    if (diff < 65) {
-        resize(self);
+    insert(self, &one, 1);
+    while (self->size % 64 != 56) {
+        insert(self, &zero, 1);
     }
+    /* gotta insert the value in big endian */
 
-    u64 l = *((u64*)(self->array));
-    btlel(&l);
-    *((u64*)(self->array + self->cap - sizeof(u64))) = l;
+    for (i = 0; i < 8; i++) {
+        insert(self, (((u8*)(ptr_size)) + 7 - i), 1);
+    }
+    assert(self->size % 64 == 0);
 }
 
-Digest sha256(Array *self) {
-    // Pseudocode taken from the Wikipedia Article on SHA-2
+void sha256(Array *self) {
+    /* Pseudocode taken from the Wikipedia Article on SHA-2 */
     usize total;
+
     for (total = 0; total < self->cap; total += SHA_SIZE) {
         u32 w[64] = { 0 };
         u32 chunk[16];
         usize i;
+        u32 a1;
+        u32 b1;
+        u32 c1;
+        u32 d1;
+        u32 e1;
+        u32 f1;
+        u32 g1;
+        u32 h1;
         memcpy(chunk, self->array + total, SHA_SIZE);
         for (i = 0; i < 16; i++) {
+            btle(&chunk[i]);
             w[i] = chunk[i];
         }
         for (i = 16; i < 64; i++) {
             u32 s0 = (rotate(w[i-15], 7) ^ rotate(w[i-15], 18) ^ (w[i-15] >> 3));
-            // s0 := (w[i-15] rightrotate 7) xor (w[i-15] rightrotate 18) xor (w[i-15] rightshift  3)
+            /* s0 := (w[i-15] rightrotate 7) xor (w[i-15] rightrotate 18) xor (w[i-15] rightshift 3) */
             u32 s1 = (rotate(w[i-2], 17) ^ rotate(w[i-2], 19) ^ (w[i-2] >> 10));
-            // s1 := (w[i-2] rightrotate 17) xor (w[i-2] rightrotate 19) xor (w[i-2] rightshift 10)
-            w[i] = w [i-16] + s0 + w[i-7] + s1;
-            // w[i] := w[i-16] + s0 + w[i-7] + s1
+            /* s1 := (w[i-2] rightrotate 17) xor (w[i-2] rightrotate 19) xor (w[i-2] rightshift 10) */
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+            /* w[i] := w[i-16] + s0 + w[i-7] + s1 */
         }
 
-        // a := h0
-        // b := h1
-        // c := h2
-        // d := h3
-        // e := h4
-        // f := h5
-        // g := h6
-        // h := h7
+        /* a := h0 */
+        /* b := h1 */
+        /* c := h2 */
+        /* d := h3 */
+        /* e := h4 */
+        /* f := h5 */
+        /* g := h6 */
+        /* h := h7 */
 
-        u32 a1 = h[0];
-        u32 b1 = h[1];
-        u32 c1 = h[2];
-        u32 d1 = h[3];
-        u32 e1 = h[4];
-        u32 f1 = h[5];
-        u32 g1 = h[6];
-        u32 h1 = h[7];
+        /* NOTE: Big endian */
+        a1 = h[0];
+        b1 = h[1];
+        c1 = h[2];
+        d1 = h[3];
+        e1 = h[4];
+        f1 = h[5];
+        g1 = h[6];
+        h1 = h[7];
         
-        // for i from 0 to 63
+        /* for i from 0 to 63 */
         for (i = 0; i < 64; i++) {
-            // S1 := (e rightrotate 6) xor (e rightrotate 11) xor (e rightrotate 25)
-            u32 s1 = (rotate(e1, 6) ^ rotate(e1, 11) ^ rotate(e1, 25));
-            // ch := (e and f) xor ((not e) and g)
-            u32 ch = (e1 & f1) ^ ((~e1) & g1);
-            // temp1 := h + S1 + ch + k[i] + w[i]
-            u32 tmp0 = (h1 + s1 + ch + k[i] + w[i]);
-            // S0 := (a rightrotate 2) xor (a rightrotate 13) xor (a rightrotate 22)
-            u32 s0 = (rotate(a1, 2) ^ rotate(a1, 13) ^ rotate(a1, 22));
-            // maj := (a and b) xor (a and c) xor (b and c)
-            u32 maj = (a1 & b1) ^ (a1 & c1) ^ (b1 & c1);
-            // temp2 := S0 + maj
-            u32 tmp1 = s0 + maj;
+            u32 s1;
+            u32 ch;
+            u32 tmp0;
+            u32 s0;
+            u32 maj;
+            u32 tmp1;
 
-            // h := g
-            // g := f
-            // f := e
-            // e := d + temp1
-            // d := c
-            // c := b
-            // b := a
-            // a := temp1 + temp2 
+            /* NOTE: Curr in little endian */
+            /* S1 := (e rightrotate 6) xor (e rightrotate 11) xor (e rightrotate 25) */
+            s1 = (rotate(e1, 6) ^ rotate(e1, 11) ^ rotate(e1, 25)); /* NOTE: Should stay in big endian */
+            /* ch := (e and f) xor ((not e) and g) */
+            ch = (e1 & f1) ^ ((~e1) & g1);
+            /* temp1 := h + S1 + ch + k[i] + w[i] */
+            tmp0 = (h1 + s1 + ch + k[i] + w[i]);
+            /* S0 := (a rightrotate 2) xor (a rightrotate 13) xor (a rightrotate 22) */
+            s0 = (rotate(a1, 2) ^ rotate(a1, 13) ^ rotate(a1, 22));
+            /* maj := (a and b) xor (a and c) xor (b and c) */
+            maj = (a1 & b1) ^ (a1 & c1) ^ (b1 & c1);
+            /* temp2 := S0 + maj */
+            tmp1 = s0 + maj;
+
+            /* h := g */
+            /* g := f */
+            /* f := e */
+            /* e := d + temp1 */
+            /* d := c */
+            /* c := b */
+            /* b := a */
+            /* a := temp1 + temp2  */
 
             h1 = g1;
             g1 = f1;
@@ -207,43 +226,23 @@ Digest sha256(Array *self) {
             a1 = tmp0 + tmp1;
         }
 
-        h[0] = h[0] + a1;
-        h[1] = h[1] + b1;
-        h[2] = h[2] + c1;
-        h[3] = h[3] + d1;
-        h[4] = h[4] + e1;
-        h[5] = h[5] + f1;
-        h[6] = h[6] + g1;
-        h[7] = h[7] + h1;
+        h[0] += a1;
+        h[1] += b1;
+        h[2] += c1;
+        h[3] += d1;
+        h[4] += e1;
+        h[5] += f1;
+        h[6] += g1;
+        h[7] += h1;
     }
-    // it says this is  "big endian"
-    // I don't know if that means big endian all the h's or the whole thing 😐
-    // I hope the emoji breaks the c89 compliance
-    // digest := hash := h0 append h1 append h2 append h3 append h4 append h5 append h6 append h7
-    btle(&h[0]);
-    btle(&h[1]);
-    btle(&h[2]);
-    btle(&h[3]);
-    btle(&h[4]);
-    btle(&h[5]);
-    btle(&h[6]);
-    btle(&h[7]);
-
-    Digest dig = {
-        .h0 = h[0],
-        .h1 = h[1],
-        .h2 = h[2],
-        .h3 = h[3],
-        .h4 = h[4],
-        .h5 = h[5],
-        .h6 = h[6],
-        .h7 = h[7],
-    };
-
-    return dig;
+    /* it says this is  "big endian" 
+     * I don't know if that means big endian all the h's or the whole thing 😐 
+     * I hope the emoji breaks the c89 compliance
+     * digest := hash := h0 append h1 append h2 append h3 append h4 append h5 append h6 append h7 */
+    /* NOTE: Already big endia */
 }
 
-// C style function name (to save bytes)
+/* Cstyle function name (to save bytes) */
 void btle(u32 *num) {
     u8 *arr = (u8*)num;
     arr[0] ^= arr[3];
@@ -276,36 +275,31 @@ void btlel(u64* num) {
 
 int main(int argc, char **argv) {
     FILE* input;
+    Array data;
+    usize i;
+
     if (argc != 2) {
         puts("No arguments provided");
         return 1;
     }
     input = fopen(argv[1], "rb");
 
-    Array data = {
-        .size = 0,
-        .cap = SHA_SIZE,
-        .array = malloc(SHA_SIZE),
-    };
+    data.size = 0;
+    data.cap = SHA_SIZE;
+    data.array = malloc(SHA_SIZE);
 
     fill_arr(input, &data);
     padd_arr(&data);
 
-    for (usize i = 0; i < data.cap; i++) {
-        printf("%x", data.array[i]);
-    }
-    puts("\n");
-    printf("Size: %lu\nCap: %lu\n", data.size, data.cap);
+    sha256(&data);
 
-    Digest hash = sha256(&data);
-
-    for (usize i = 0; i < 8; i++) {
-        printf("%x", h[i]);
+    for (i = 0; i < 8; i++) {
+        printf("%08x", h[i]);
     }
-    puts("\n");
+
+    printf("  %s\n", argv[1]);
 
     free(data.array);
-
     fclose(input);
     return 0;
 }
