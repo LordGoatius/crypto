@@ -2,6 +2,25 @@
 #include <assert.h>
 #include <stdio.h>
 
+/* Shifts the array left by `shift` indices */
+void shl(u64* in, usize shift) {
+    usize i;
+    for (i = SIZE; i >= shift; i--) {
+        in[i] = in[i - shift];
+    }
+    for (i = 0; i < shift; i++) {
+        in[i] = 0;
+    }
+}
+
+u64* foldl_bigint(u64* acc, u64* (*folder)(u64*, u64*), u64** arr, usize index, usize size) {
+    if (index == size) {
+        return acc;
+    }
+    acc = folder(acc, arr[index]);
+    return foldl_bigint(acc, folder, arr, index + 1, size);
+}
+
 /* print the big value as a string */
 void seebig(u64 *a) {
     usize i;
@@ -44,12 +63,28 @@ u64 bigmul(u64 *in0, u64 *in1, u64 *out) {
     u32 *al0 = (u32 *)in0, *al1 = (u32 *)in1 , *alw = (u32 *)wrk, *alo = (u32 *)out;
     u64 carry = 0, tmp;
 
-
-
     return carry;
 }
 
+u64 foldl_u64(u64 acc, u64 (*folder)(u64, u64), u64* arr, usize index, usize size) {
+    if (index == size) {
+        return acc;
+    }
+    acc = folder(acc, arr[index]);
+    return foldl_u64(acc, folder, arr, index + 1, size);
+}
+
+u64 mul(u64 a, u64 b) {
+    return a * b;
+}
+
 int main(int argc, char **argv) {
+    unsigned __int128 z = 0;
+    /* u64 arr[7] = {1, 2, 3, 4, 5, 6, 7};
+    u64 val = foldl_u64(1, mul, arr, 0, 7);
+    printf("%ld\n", val);
+    printf("%d\n", (1*2*3*4*5*6*7));
+
     u64 min[SIZE], sub[SIZE], dif[SIZE];
     usize i;
     memset(min, 0x22, BYTES);
@@ -59,7 +94,8 @@ int main(int argc, char **argv) {
     seebig(min);
     seebig(sub);
     seebig(dif);
-
+    */
+    usize i;
     u64 a[SIZE], b[SIZE], c[SIZE];
     memset(a, 0, BYTES);
     memset(b, 0, BYTES);
@@ -69,16 +105,16 @@ int main(int argc, char **argv) {
         b[i] = i * 2;
     }
 
-    bigadd(a, b, c);
+    /* bigadd(a, b, c); */
     seebig(a);
     seebig(b);
-    /* You may have written `bigeqs` or */
-    for (i = 0; i < SIZE; i++) {
-        printf("c[%02lx] = %02lx\n", i, c[i]);
-        assert(c[i] == ((i * 3) + (i * 2)));
-    }
 
-    memset(a, 0x66, BYTES);
+    shl(a, 1);
+    shl(b, 2);
+
+    seebig(a);
+    seebig(b);
+    /* memset(a, 0x66, BYTES);
     memset(b, 0xaa, BYTES);
     memset(c, 0, BYTES);
 
@@ -94,7 +130,7 @@ int main(int argc, char **argv) {
     memset(c, 0, BYTES);
     a[0] = 1;
     bigmul(a, b, c);
-    seebig(c);
+    seebig(c); */
 
     return 0;
 }

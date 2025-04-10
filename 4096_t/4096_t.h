@@ -1,7 +1,6 @@
 #ifndef _4096_T_H
 #define _4096_T_H
 
-#include <cstdint>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +42,11 @@ u64 bigadd(u64 *in0, u64 *in1, u64 *sum);
 /* print the big value as a string */
 void seebig(u64 *a);
 
-void foldl_bigint(u64* acc, u64* (*folder)(u64*, usize index, usize size));
+/* The Superior Way of Computation.
+ * Memory should be managed by the function passed into foldl_bigint
+ * */
+u64* foldl_bigint(u64* acc, u64* (*folder)(u64*, u64*), u64** arr, usize index, usize size);
+/* Shifts the array left by `shift` indices */
+void shl(u64* in, usize shift);
 
 #endif
