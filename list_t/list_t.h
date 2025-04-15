@@ -194,7 +194,7 @@ uint64_t list_count(list_t l, void *x);
  "Extra credit" for a sorting algorithm
  More "Extra credit" for an O(n*log(n)) sort
  */
-/* void sort(list_t l, bool (greater_than)(void *, void *)) */
+void sort(list_t l, bool (greater_than)(void *, void *));
 
 /*
  8: Reverse

@@ -2,3 +2,5 @@ enigma/out
 **.out
 **shainc
 list_t/target
+list_t/main
+list_t/test

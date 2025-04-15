@@ -4,6 +4,10 @@
 
 #include "list_t.h"
 
+bool ordering(void *a, void *b) {
+    return a < b;
+}
+
 int main()
 {
     list_t l = list_new(), l2;
@@ -123,7 +127,11 @@ int main()
     list_clear(l);
     list_print(l2);
 
-    list_free(l);
+    printf("\n9. Sort (10 pts)\n");
+    printf("Sorting [3,1,3,1,1], sort should be:\n");
+    printf("[1, 1, 1, 3, 3]\n");
+    sort(l2, ordering);
+    list_print(l2);
     list_free(l2);
 
     return 0;
